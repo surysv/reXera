@@ -6,7 +6,9 @@
   <a href="https://4space.es"><img src="img/LOGO_4SPACE.png" alt="4Space logo" width="160"></a>
 </p>
 
-# XERA — eXploration & Education Robotics Architecture
+> This repo is forked from 4Space's original Xera repo. We will use it to develop slight modifications to fit the needs of our builds. Props to 4Space.
+
+# reXERA - expanded eXploration & Education Robotics Architecture
 
 XERA is a low-cost, modular rover for educational robotics, developed by [4Space](https://4space.es) (4Space UniOvi), a student engineering team from the University of Oviedo focused on planetary rover technologies.
 
@@ -19,6 +21,14 @@ XERA can be built from scratch (DIY), from a kit, or used pre-assembled.
   <br>
   <em>XERA fully assembled: 3D printed chassis, four-wheel drive and acrylic lid.</em>
 </p>
+
+## reXera Roadmap
+We plan on implementing the following features before December 3rd:
+- [ ] xInput (for example PS controller) via web app.
+- [ ] Working arm module complete with inverse kinematics.
+- [ ] Working catapult module together with shooting controls on the web app.
+- [ ] Rethought movement control.
+- [ ] Functional multipurpose led strip.
 
 ## This repository
 
