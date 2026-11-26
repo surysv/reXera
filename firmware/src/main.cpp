@@ -31,7 +31,7 @@
 
 // Onboard RGB LED of the ESP32-S3-DevKitC-1 v1.1 (GPIO 38).
 // On v1.0 boards it is GPIO 48.
-#define LED_PIN 38
+#define LED_PIN 48
 #define NUM_LEDS 1
 
 Adafruit_NeoPixel leds(
