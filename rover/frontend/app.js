@@ -3,8 +3,35 @@
   "use strict";
   const $ = (id) => document.getElementById(id);
 
-  const S = { ws: null, open: false, isOwner: false, ownerPresent: false, rate: 20, state: {} };
+  // ====================================================
+  // ESTADO GLOBAL
+  // ====================================================
+  const S = {
 
+    ws: null,
+    open: false,
+
+    isOwner: false,
+    ownerPresent: false,
+
+    rate: 20,
+    state: {},
+
+    inputSource: "web",
+
+    gamepadConnected: false,
+
+    suspended: false,
+
+    servoAngles: {
+      1: 0,
+      2: 0
+    }
+  };
+
+  // ====================================================
+  // PESTAÑAS
+  // ====================================================
   /* ---------- pestañas ---------- */
   document.querySelectorAll(".tab").forEach((btn) =>
     btn.addEventListener("click", () => {
@@ -16,6 +43,9 @@
     })
   );
 
+  // ====================================================
+  // WEBSOCKET
+  // ====================================================
   /* ---------- WebSocket ---------- */
   function send(obj) {
     if (S.open) S.ws.send(JSON.stringify(obj));
@@ -29,6 +59,10 @@
     ws.onclose = () => {
       S.open = false; S.isOwner = false; S.ownerPresent = false;
       joy.setEnabled(false);
+      S.servoAngles = {
+        1: 0,
+        2: 0
+      };
       render();
       setTimeout(connect, 1000); // el backend ya paró el rover al ver cerrarse el socket
     };
@@ -37,10 +71,18 @@
       if (m.type === "hello") { setRate(m.send_rate_hz); }
       else if (m.type === "state") { S.state = m; S.isOwner = m.is_owner; S.ownerPresent = m.owner_present; render(); }
       else if (m.type === "denied") { flash("Otro cliente tiene el control ahora mismo."); }
+      else if (m.type === "servo_accepted") {
+
+        $("servo-msg").textContent =
+          `Orden aceptada: ${m.command}.`;
+      }
       else if (m.type === "error") { flash(m.detail); }
     };
   }
-
+  
+  // ====================================================
+  // JOYSTICK WEB
+  // ====================================================
   /* ---------- joystick y envío periódico ---------- */
   const joy = new Joystick($("pad"), $("knob"), (x, y) => {
     $("val-x").textContent = x;
@@ -48,20 +90,593 @@
     if (x === 0 && y === 0 && S.isOwner) send({ type: "move", x: 0, y: 0 }); // al soltar, sin esperar al tick
   });
 
+  // ====================================================
+  // GAMEPAD
+  // ====================================================
+
+  const gamepad = new GamepadController(
+    (status) => {
+
+      S.gamepadConnected =
+        !!status.connected &&
+        !!status.supported;
+
+      $("gamepad-status").textContent = status.text;
+
+      $("gamepad-status").classList.toggle(
+        "bad",
+        !!status.connected && !status.supported
+      );
+
+      const option = $(
+        "input-source"
+      ).querySelector(
+        'option[value="gamepad"]'
+      );
+
+      option.disabled = !S.gamepadConnected;
+
+
+      // Si se desconecta el mando mientras conduce,
+      // recuperar el joystick web y parar.
+      if (
+        !S.gamepadConnected &&
+        S.inputSource === "gamepad"
+      ) {
+
+        S.inputSource = "web";
+
+        $("input-source").value = "web";
+
+        joy.reset();
+
+        send({
+          type: "stop"
+        });
+
+        flash(
+          "El mando se ha desconectado. Se ha detenido el rover."
+        );
+      }
+
+      render();
+    }
+  );
+
+
+  // ====================================================
+  // CONFIGURACIÓN DE CONTROL
+  // ====================================================
+
   let timer = null;
-  function setRate(hz) {
-    S.rate = hz;
-    clearInterval(timer);
-    // Mientras tengamos el control enviamos SIEMPRE (también 0,0): es el "latido" que
-    // mantiene vivo el watchdog del backend.
-    timer = setInterval(() => { if (S.isOwner) send({ type: "move", x: joy.x, y: joy.y }); }, 1000 / hz);
+
+  let lastControlTick = performance.now();
+
+  const SERVO_RATE_DEG_PER_SECOND = 65;
+
+  const SERVO_LIMITS = {
+    1: 120,
+    2: 90
+  };
+
+
+  // ====================================================
+  // ACTUALIZAR VISUALIZACIÓN DE SERVO
+  // ====================================================
+
+  function setServoDisplay(
+    servo,
+    angle
+  ) {
+
+    const bounded = Math.max(
+      0,
+      Math.min(
+        SERVO_LIMITS[servo],
+        Math.round(angle)
+      )
+    );
+
+    S.servoAngles[servo] = bounded;
+
+    $(`servo${servo}-angle`).value = bounded;
+
+    $(`servo${servo}-value`).textContent = bounded;
+
+    return bounded;
   }
 
-  $("btn-stop").addEventListener("click", () => { joy.reset(); send({ type: "stop" }); });
-  $("btn-control").addEventListener("click", () => send({ type: S.isOwner ? "release_control" : "request_control" }));
-  window.addEventListener("blur", () => joy.reset());
-  document.addEventListener("visibilitychange", () => { if (document.hidden) joy.reset(); });
 
+  // ====================================================
+  // ENVIAR ÁNGULO DE SERVO
+  // ====================================================
+
+  function sendServo(
+    servo,
+    angle
+  ) {
+
+    if (!S.isOwner) {
+      return;
+    }
+
+    const bounded = setServoDisplay(
+      servo,
+      angle
+    );
+
+    send({
+      type: "servo_set",
+      servo,
+      angle: bounded
+    });
+  }
+
+
+  // ====================================================
+  // BOTONES DEL MANDO
+  // ====================================================
+
+  function handleGamepadButtons(gp) {
+
+    if (
+      !gp.connected ||
+      !gp.supported
+    ) {
+      return;
+    }
+
+
+    // X:
+    // Pedir o liberar control.
+
+    if (gp.buttons.cross) {
+
+      send({
+        type: S.isOwner
+          ? "release_control"
+          : "request_control"
+      });
+    }
+
+
+    // CÍRCULO:
+    // STOP.
+
+    if (gp.buttons.circle) {
+
+      joy.reset();
+
+      send({
+        type: "stop"
+      });
+    }
+
+
+    if (!S.isOwner) {
+      return;
+    }
+
+
+    // TRIÁNGULO:
+    // Secuencia automática.
+
+    if (gp.buttons.triangle) {
+
+      const wait = Number(
+        $("servo-sequence-wait").value
+      );
+
+      if (
+        Number.isInteger(wait) &&
+        wait >= 0 &&
+        wait <= 60000
+      ) {
+
+        send({
+          type: "servo_sequence",
+          wait_ms: wait
+        });
+
+        $("servo-msg").textContent =
+          "Secuencia automática solicitada desde el mando.";
+      }
+    }
+
+
+    // CUADRADO:
+    // Ambos servos a origen.
+
+    if (gp.buttons.square) {
+
+      send({
+        type: "servo_home"
+      });
+
+      setServoDisplay(1, 0);
+      setServoDisplay(2, 0);
+    }
+  }
+
+
+  // ====================================================
+  // CICLO PRINCIPAL DE CONTROL
+  // ====================================================
+
+  function setRate(hz) {
+
+    S.rate = hz;
+
+    clearInterval(timer);
+
+    lastControlTick = performance.now();
+
+    // Este temporizador mantiene el heartbeat
+    // y lee el mando a la frecuencia configurada.
+
+    timer = setInterval(
+      () => {
+
+        const now = performance.now();
+
+        const dt = Math.max(
+          0,
+          Math.min(
+            0.1,
+            (now - lastControlTick) / 1000
+          )
+        );
+
+        lastControlTick = now;
+
+
+        // Leer mando físico.
+        const gp = gamepad.poll();
+
+
+        if (S.inputSource === "gamepad") {
+
+          handleGamepadButtons(gp);
+        }
+
+
+        if (!S.isOwner) {
+          return;
+        }
+
+
+        // Si la ventana pierde el foco,
+        // enviar valores neutros.
+
+        const suspended =
+          S.suspended ||
+          document.hidden;
+
+
+        let input;
+
+
+        if (
+          S.inputSource === "gamepad" &&
+          gp.connected &&
+          gp.supported &&
+          !suspended
+        ) {
+
+          input = {
+            x: gp.x,
+            y: gp.y
+          };
+        }
+
+        else if (
+          S.inputSource === "web" &&
+          !suspended
+        ) {
+
+          input = {
+            x: joy.x,
+            y: joy.y
+          };
+        }
+
+        else {
+
+          input = {
+            x: 0,
+            y: 0
+          };
+        }
+
+
+        // Actualizar indicadores.
+        $("val-x").textContent = input.x;
+        $("val-y").textContent = input.y;
+
+
+        // HEARTBEAT DE MOVIMIENTO.
+        send({
+          type: "move",
+          x: input.x,
+          y: input.y
+        });
+
+
+        // --------------------------------------------
+        // CONTROL ANALÓGICO DE SERVOS
+        // --------------------------------------------
+
+        if (
+          S.inputSource === "gamepad" &&
+          gp.connected &&
+          gp.supported &&
+          !suspended
+        ) {
+
+          const next1 =
+            S.servoAngles[1] +
+            gp.servo1Axis *
+            SERVO_RATE_DEG_PER_SECOND *
+            dt;
+
+          const next2 =
+            S.servoAngles[2] +
+            gp.servo2Axis *
+            SERVO_RATE_DEG_PER_SECOND *
+            dt;
+
+
+          const rounded1 = Math.round(next1);
+          const rounded2 = Math.round(next2);
+
+
+          if (rounded1 !== S.servoAngles[1]) {
+
+            sendServo(
+              1,
+              rounded1
+            );
+          }
+
+
+          if (rounded2 !== S.servoAngles[2]) {
+
+            sendServo(
+              2,
+              rounded2
+            );
+          }
+        }
+
+      },
+
+      1000 / hz
+    );
+  }
+
+  // ====================================================
+  // BOTÓN STOP WEB
+  // ====================================================
+  $("btn-stop").addEventListener("click", () => { joy.reset(); send({ type: "stop" }); });
+
+  // ====================================================
+  // PEDIR / LIBERAR CONTROL
+  // ====================================================
+  $("btn-control").addEventListener("click", () => send({ type: S.isOwner ? "release_control" : "request_control" }));
+
+  // ====================================================
+  // CAMBIO DE FUENTE DE CONTROL
+  // ====================================================
+  $("input-source").addEventListener(
+    "change",
+    (event) => {
+
+      S.inputSource = event.target.value;
+
+      joy.reset();
+
+      send({
+        type: "move",
+        x: 0,
+        y: 0
+      });
+
+      render();
+    }
+  );
+
+    // ====================================================
+  // SLIDERS DE LOS SERVOS
+  // ====================================================
+
+  [1, 2].forEach(
+    (servo) => {
+
+      const slider = $(
+        `servo${servo}-angle`
+      );
+
+      let debounce = null;
+
+
+      // Mientras se arrastra el deslizador.
+      slider.addEventListener(
+        "input",
+        () => {
+
+          const angle = setServoDisplay(
+            servo,
+            Number(slider.value)
+          );
+
+          clearTimeout(debounce);
+
+          debounce = setTimeout(
+            () => sendServo(servo, angle),
+            70
+          );
+        }
+      );
+
+
+      // Enviar la posición final.
+      slider.addEventListener(
+        "change",
+        () => {
+
+          clearTimeout(debounce);
+
+          sendServo(
+            servo,
+            Number(slider.value)
+          );
+        }
+      );
+
+
+      // HOME individual.
+      $(`servo${servo}-home`).addEventListener(
+        "click",
+        () => {
+
+          send({
+            type: "servo_home_one",
+            servo
+          });
+
+          setServoDisplay(servo, 0);
+        }
+      );
+    }
+  );
+
+
+  // ====================================================
+  // SECUENCIA AUTOMÁTICA
+  // ====================================================
+
+  $("servo-sequence-start").addEventListener(
+    "click",
+    () => {
+
+      const wait = Number(
+        $("servo-sequence-wait").value
+      );
+
+      if (
+        !Number.isInteger(wait) ||
+        wait < 0 ||
+        wait > 60000
+      ) {
+
+        $("servo-msg").textContent =
+          "El tiempo debe ser un entero entre 0 y 60000 ms.";
+
+        return;
+      }
+
+      send({
+        type: "servo_sequence",
+        wait_ms: wait
+      });
+
+      $("servo-msg").textContent =
+        "Secuencia automática solicitada.";
+    }
+  );
+
+
+  // ====================================================
+  // HOME GENERAL
+  // ====================================================
+
+  $("servo-home-all").addEventListener(
+    "click",
+    () => {
+
+      send({
+        type: "servo_home"
+      });
+
+      setServoDisplay(1, 0);
+      setServoDisplay(2, 0);
+    }
+  );
+
+
+  // ====================================================
+  // CANCELAR SECUENCIA
+  // ====================================================
+
+  $("servo-sequence-cancel").addEventListener(
+    "click",
+    () => {
+
+      send({
+        type: "servo_cancel"
+      });
+    }
+  );
+
+  // ====================================================
+  // PÉRDIDA DE FOCO
+  // ====================================================
+  window.addEventListener(
+    "blur",
+    () => {
+
+      S.suspended = true;
+
+      joy.reset();
+
+      if (S.isOwner) {
+
+        send({
+          type: "stop"
+        });
+      }
+    }
+  );
+
+
+  window.addEventListener(
+    "focus",
+    () => {
+
+      S.suspended = false;
+    }
+  );
+
+
+  document.addEventListener(
+    "visibilitychange",
+    () => {
+
+      if (document.hidden) {
+
+        S.suspended = true;
+
+        joy.reset();
+
+        if (S.isOwner) {
+
+          send({
+            type: "stop"
+          });
+        }
+      }
+
+      else {
+
+        S.suspended = false;
+      }
+    }
+  );
+
+
+  // ====================================================
+  // VELOCIDAD MÁXIMA
+  // ====================================================
   /* ---------- velocidad máxima ---------- */
   let speedTimer = null, speedDragging = false;
   $("speed").addEventListener("input", (e) => {
@@ -74,6 +689,9 @@
     }, 200);
   });
 
+  // ====================================================
+  // RENDERIZADO DE ESTADO
+  // ====================================================
   /* ---------- renderizado ---------- */
   function render() {
     const wsPill = $("ws-pill");
@@ -89,6 +707,32 @@
     btn.disabled = !S.open || (!S.isOwner && S.ownerPresent);
     joy.setEnabled(S.open && S.isOwner);
 
+        $("input-source").disabled = !S.open;
+
+    $("input-source").value = S.inputSource;
+
+
+    // Activar/desactivar controles de servos.
+    const servoEnabled =
+      S.open &&
+      S.isOwner;
+
+
+    [
+      "servo1-angle",
+      "servo2-angle",
+      "servo1-home",
+      "servo2-home",
+      "servo-sequence-start",
+      "servo-home-all",
+      "servo-sequence-cancel"
+    ].forEach(
+      (id) => {
+
+        $(id).disabled = !servoEnabled;
+      }
+    );
+    
     if (S.state.max_speed !== undefined && !speedDragging) {
       $("speed").value = S.state.max_speed;
       $("speed-val").textContent = S.state.max_speed;
@@ -97,12 +741,18 @@
     else if (S.isOwner) flash("");
   }
 
+  // ====================================================
+  // MENSAJES DE ESTADO
+  // ====================================================
   let flashTimer = null;
   function flash(text) {
     $("msg").textContent = text;
     clearTimeout(flashTimer);
   }
 
+  // ====================================================
+  // CÁMARA
+  // ====================================================
   /* ---------- vídeo ---------- */
   // El <img> solo está conectado al stream mientras se ve la pestaña Control: así el
   // backend no captura (ni gasta CPU) si nadie mira.
@@ -132,6 +782,9 @@
   setInterval(pollCamera, 2000);
   document.addEventListener("visibilitychange", pollCamera);
 
+  // ====================================================
+  // ESTADO DEL SISTEMA
+  // ====================================================
   /* ---------- estado del sistema ---------- */
   function stat(label, value, sub, level) {
     return `<div class="stat"><div class="label"><i class="dot ${level || ""}"></i>${label}</div>
@@ -164,6 +817,9 @@
   }
   setInterval(() => { if ($("tab-status").classList.contains("active")) refreshStatus(); }, 2000);
 
+  // ====================================================
+  // CONFIGURACIÓN
+  // ====================================================
   /* ---------- ajustes ---------- */
   async function putConfig(patch) {
     const r = await fetch("/api/config", { method: "PUT", headers: { "Content-Type": "application/json" }, body: JSON.stringify(patch) });
@@ -183,6 +839,9 @@
     for (const f of fields()) f.value = f.name.split(".").reduce((o, k) => o[k], cfg);
   }
 
+  // ====================================================
+  // GUARDAR CONFIGURACIÓN
+  // ====================================================
   $("settings-form").addEventListener("submit", async (e) => {
     e.preventDefault();
     const patch = {};
@@ -200,6 +859,9 @@
     }
   });
 
+  // ====================================================
+  // INICIO
+  // ====================================================
   /* ---------- inicio ---------- */
   render();
   connect();
