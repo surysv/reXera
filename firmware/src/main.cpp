@@ -1,5 +1,8 @@
 #include <Arduino.h>
 #include <Adafruit_NeoPixel.h>
+#include "servo_controller.h"
+#include <stdlib.h>
+#include <string.h>
 
 // ======================================================
 // USB SERIAL
@@ -122,6 +125,9 @@ String mensaje = "";
 #define COMMAND_TIMEOUT_MS 400
 
 unsigned long lastCommandMs = 0;
+
+bool hasMotionHeartbeat = false;
+bool watchdogTripped = false;
 
 
 // ======================================================
@@ -413,6 +419,199 @@ void ledsGiro() {
   leds.show();
 }
 
+  // ----------------------------------
+  // INDIVIDUAL SERVO
+  // SERVO,id,angle
+  // ----------------------------------
+
+  if (line.startsWith("SERVO,")) {
+
+    long servo = 0;
+    long angle = 0;
+
+    if (
+      !parseTwoIntegers(
+        line,
+        "SERVO,",
+        servo,
+        angle
+      )
+    ) {
+
+      Serial.println("ERROR,SERVO_FORMAT");
+      return;
+    }
+
+    if (servo != 1 && servo != 2) {
+
+      Serial.println("ERROR,SERVO_ID");
+      return;
+    }
+
+    if (
+      (servo == 1 &&
+       (angle < 0 || angle > SERVO1_MAX_ANGLE)) ||
+
+      (servo == 2 &&
+       (angle < 0 || angle > SERVO2_MAX_ANGLE))
+    ) {
+
+      Serial.println("ERROR,SERVO_RANGE");
+      return;
+    }
+
+    // Una orden manual interrumpe la secuencia.
+    servosCancelSequence();
+
+    if (
+      servoSetAngle(
+        (uint8_t)servo,
+        (int)angle
+      )
+    ) {
+
+      Serial.print("SERVO_ACCEPTED,");
+      Serial.print(servo);
+      Serial.print(',');
+      Serial.println(angle);
+
+    }
+
+    else {
+
+      Serial.println("ERROR,SERVO_RANGE");
+    }
+
+    return;
+  }
+
+
+  // ----------------------------------
+  // AUTOMATIC SERVO SEQUENCE
+  // SERVO_SEQ,wait_ms
+  // ----------------------------------
+
+  if (line.startsWith("SERVO_SEQ,")) {
+
+    String waitText = line.substring(
+      String("SERVO_SEQ,").length()
+    );
+
+    long waitMs = 0;
+
+    if (
+      !parseStrictInt(waitText, waitMs) ||
+      waitMs < 0 ||
+      waitMs > 60000
+    ) {
+
+      Serial.println("ERROR,SERVO_SEQUENCE_RANGE");
+      return;
+    }
+
+    if (
+      servosStartSequence(
+        (uint32_t)waitMs
+      )
+    ) {
+
+      Serial.print("SERVO_SEQUENCE_STARTED,");
+      Serial.println(waitMs);
+
+    }
+
+    else {
+
+      Serial.println("ERROR,SERVO_SEQUENCE_START");
+    }
+
+    return;
+  }
+
+
+  // ----------------------------------
+  // ALL SERVOS HOME
+  // ----------------------------------
+
+  if (line == "SERVO_HOME") {
+
+    servosHome();
+
+    Serial.println("SERVO_HOME_ACCEPTED");
+
+    return;
+  }
+
+
+  // ----------------------------------
+  // ONE SERVO HOME
+  // SERVO_HOME,id
+  // ----------------------------------
+
+  if (line.startsWith("SERVO_HOME,")) {
+
+    String servoText = line.substring(
+      String("SERVO_HOME,").length()
+    );
+
+    long servo = 0;
+
+    if (
+      !parseStrictInt(servoText, servo) ||
+      (servo != 1 && servo != 2)
+    ) {
+
+      Serial.println("ERROR,SERVO_HOME_ID");
+      return;
+    }
+
+    servoHome(
+      (uint8_t)servo
+    );
+
+    Serial.print("SERVO_HOME_ACCEPTED,");
+    Serial.println(servo);
+
+    return;
+  }
+
+
+  // ----------------------------------
+  // CANCEL SERVO SEQUENCE
+  // ----------------------------------
+
+  if (line == "SERVO_CANCEL") {
+
+    servosCancelSequence();
+
+    Serial.println("SERVO_CANCEL_ACCEPTED");
+
+    return;
+  }
+
+
+  // ----------------------------------
+  // EMERGENCY STOP
+  // ----------------------------------
+
+  if (line == "STOP") {
+
+    throttle = 0;
+    steering = 0;
+
+    lastCommandMs = millis();
+
+    hasMotionHeartbeat = true;
+    watchdogTripped = false;
+
+    servosCancelSequence();
+
+    Serial.println("STOP_ACCEPTED");
+
+    return;
+  }
+
+
 
 // ======================================================
 // READ USB SERIAL
@@ -524,6 +723,9 @@ void setup() {
   leds.clear();
   leds.show();
 
+  // Inicializar los dos servos.
+  servosInit();
+
   // -------------------------
   // Startup message
   // -------------------------
@@ -531,6 +733,7 @@ void setup() {
   Serial.println();
   Serial.println("Rover ready");
   Serial.println("Format: throttle,steering");
+  Serial.println("Servo: SERVO,id,angle | SERVO_SEQ,wait_ms | SERVO_HOME | SERVO_CANCEL");
   Serial.println("Range: -100 to 100");
 }
 
@@ -548,15 +751,30 @@ void loop() {
   leerSerial();
 
   // Watchdog: no recent command -> stop
-  if ((throttle != 0 || steering != 0) &&
-      millis() - lastCommandMs > COMMAND_TIMEOUT_MS) {
+  if (
+    hasMotionHeartbeat &&
+    !watchdogTripped &&
+    millis() - lastCommandMs > COMMAND_TIMEOUT_MS
+  ) {
 
     throttle = 0;
     steering = 0;
 
-    Serial.println("WATCHDOG -> no command, stopped");
-  }
+    servosCancelSequence();
 
+    watchdogTripped = true;
+
+    Serial.println(
+      "WATCHDOG -> no command, stopped"
+    );
+  }
+  
+  // ====================================================
+  // SERVO STATE MACHINE
+  // ====================================================
+
+  // No utiliza delay().
+  servosUpdate();
 
   // ====================================================
   // THROTTLE
