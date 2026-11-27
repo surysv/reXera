@@ -1,106 +1,691 @@
 <!doctype html>
 <html lang="es">
+
 <head>
+
   <meta charset="utf-8">
-  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover, user-scalable=no">
-  <meta name="theme-color" content="#0b1213">
+
+  <meta
+    name="viewport"
+    content="width=device-width, initial-scale=1, viewport-fit=cover, user-scalable=no"
+  >
+
+  <meta
+    name="theme-color"
+    content="#0b1213"
+  >
+
   <title>4SPACE Mini Rover</title>
-  <link rel="stylesheet" href="style.css">
+
+  <link
+    rel="stylesheet"
+    href="style.css"
+  >
+
 </head>
+
+
 <body>
+
+  <!-- ============================================ -->
+  <!-- BARRA SUPERIOR -->
+  <!-- ============================================ -->
+
   <header class="topbar">
-    <div class="brand"><span class="logo">4SPACE</span><span id="rover-name" class="rover-name">Mini Rover</span></div>
-    <div class="top-status">
-      <span id="ws-pill" class="pill bad"><i class="dot"></i><span>Desconectado</span></span>
-      <span id="ctl-pill" class="pill"><i class="dot"></i><span>Sin control</span></span>
+
+    <div class="brand">
+
+      <span class="logo">4SPACE</span>
+
+      <span
+        id="rover-name"
+        class="rover-name"
+      >
+        Mini Rover
+      </span>
+
     </div>
+
+
+    <div class="top-status">
+
+      <span
+        id="ws-pill"
+        class="pill bad"
+      >
+
+        <i class="dot"></i>
+
+        <span>Desconectado</span>
+
+      </span>
+
+
+      <span
+        id="ctl-pill"
+        class="pill"
+      >
+
+        <i class="dot"></i>
+
+        <span>Sin control</span>
+
+      </span>
+
+    </div>
+
   </header>
 
-  <nav class="tabs" role="tablist">
-    <button class="tab active" data-tab="control" role="tab">Control</button>
-    <button class="tab" data-tab="status" role="tab">Estado</button>
-    <button class="tab" data-tab="settings" role="tab">Ajustes</button>
+
+  <!-- ============================================ -->
+  <!-- PESTAÑAS -->
+  <!-- ============================================ -->
+
+  <nav
+    class="tabs"
+    role="tablist"
+  >
+
+    <button
+      class="tab active"
+      data-tab="control"
+      role="tab"
+    >
+      Control
+    </button>
+
+
+    <button
+      class="tab"
+      data-tab="status"
+      role="tab"
+    >
+      Estado
+    </button>
+
+
+    <button
+      class="tab"
+      data-tab="settings"
+      role="tab"
+    >
+      Ajustes
+    </button>
+
   </nav>
 
+
   <main>
-    <!-- A + B: vídeo y joystick -->
-    <section id="tab-control" class="tabpane active">
+
+
+    <!-- ========================================== -->
+    <!-- CONTROL -->
+    <!-- ========================================== -->
+
+    <section
+      id="tab-control"
+      class="tabpane active"
+    >
+
       <div class="control-grid">
+
+
+        <!-- VÍDEO -->
+
         <div class="card video-card">
-          <div id="video-box" class="video-box">
-            <img id="video-img" alt="Vídeo en directo" hidden>
-            <div id="video-msg" class="video-msg">
+
+          <div
+            id="video-box"
+            class="video-box"
+          >
+
+            <img
+              id="video-img"
+              alt="Vídeo en directo"
+              hidden
+            >
+
+            <div
+              id="video-msg"
+              class="video-msg"
+            >
+
               <b>Webcam desconectada</b>
-              <small id="video-detail">Conecta la webcam al hub USB.</small>
+
+              <small id="video-detail">
+                Conecta la webcam al hub USB.
+              </small>
+
             </div>
+
           </div>
+
         </div>
+
+
+        <!-- JOYSTICK WEB -->
 
         <div class="card pad-card">
-          <div id="pad" class="pad disabled" aria-label="Joystick">
+
+          <div
+            id="pad"
+            class="pad disabled"
+            aria-label="Joystick"
+          >
+
             <div class="pad-ring"></div>
-            <div id="knob" class="knob"></div>
+
+            <div
+              id="knob"
+              class="knob"
+            ></div>
+
           </div>
+
+
           <div class="readout">
-            <div>X <b id="val-x">0</b></div>
-            <div>Y <b id="val-y">0</b></div>
+
+            <div>
+              X <b id="val-x">0</b>
+            </div>
+
+            <div>
+              Y <b id="val-y">0</b>
+            </div>
+
           </div>
+
+
           <div class="btn-row">
-            <button id="btn-control" class="btn primary">Pedir control</button>
-            <button id="btn-stop" class="btn danger">STOP</button>
+
+            <button
+              id="btn-control"
+              class="btn primary"
+            >
+              Pedir control
+            </button>
+
+
+            <button
+              id="btn-stop"
+              class="btn danger"
+            >
+              STOP
+            </button>
+
           </div>
+
+
           <label class="speed">
-            <span>Velocidad máx. <b id="speed-val">60</b>%</span>
-            <input id="speed" type="range" min="20" max="100" step="5" value="60">
+
+            <span>
+              Velocidad máx.
+              <b id="speed-val">60</b>%
+            </span>
+
+            <input
+              id="speed"
+              type="range"
+              min="20"
+              max="100"
+              step="5"
+              value="60"
+            >
+
           </label>
-          <p id="msg" class="hint" aria-live="polite"></p>
+
+
+          <p
+            id="msg"
+            class="hint"
+            aria-live="polite"
+          ></p>
+
         </div>
+
       </div>
+
+
+      <!-- ======================================== -->
+      <!-- SELECCIÓN DEL MANDO -->
+      <!-- ======================================== -->
+
+      <div class="input-card card">
+
+        <div class="input-row">
+
+          <label for="input-source">
+            Fuente de control
+          </label>
+
+          <select id="input-source">
+
+            <option value="web">
+              Joystick web
+            </option>
+
+            <option value="gamepad">
+              Mando PlayStation / USB
+            </option>
+
+          </select>
+
+        </div>
+
+
+        <p
+          id="gamepad-status"
+          class="hint"
+          aria-live="polite"
+        >
+          Conecta un mando USB para detectarlo.
+        </p>
+
+
+        <p class="hint">
+          Mando: stick izquierdo = rover;
+          stick derecho = servos;
+          △ = secuencia;
+          □ = origen;
+          ○ = STOP;
+          × = pedir/liberar control.
+        </p>
+
+      </div>
+
+
+      <!-- ======================================== -->
+      <!-- CONTROL DE SERVOS -->
+      <!-- ======================================== -->
+
+      <section
+        class="servo-card card"
+        aria-labelledby="servo-title"
+      >
+
+        <h2 id="servo-title">
+          Actuadores · servos
+        </h2>
+
+
+        <div class="servo-grid">
+
+
+          <!-- SERVO 1 -->
+
+          <div class="servo-control">
+
+            <label for="servo1-angle">
+
+              Servo 1
+
+              <b>
+                <span id="servo1-value">0</span>°
+                / 120°
+              </b>
+
+            </label>
+
+            <input
+              id="servo1-angle"
+              type="range"
+              min="0"
+              max="120"
+              step="1"
+              value="0"
+              disabled
+            >
+
+          </div>
+
+
+          <!-- SERVO 2 -->
+
+          <div class="servo-control">
+
+            <label for="servo2-angle">
+
+              Servo 2
+
+              <b>
+                <span id="servo2-value">0</span>°
+                / 90°
+              </b>
+
+            </label>
+
+            <input
+              id="servo2-angle"
+              type="range"
+              min="0"
+              max="90"
+              step="1"
+              value="0"
+              disabled
+            >
+
+          </div>
+
+        </div>
+
+
+        <!-- HOME INDIVIDUAL -->
+
+        <div class="servo-actions">
+
+          <button
+            id="servo1-home"
+            class="btn"
+            disabled
+          >
+            Servo 1 a origen
+          </button>
+
+
+          <button
+            id="servo2-home"
+            class="btn"
+            disabled
+          >
+            Servo 2 a origen
+          </button>
+
+        </div>
+
+
+        <!-- TIEMPO DE LA SECUENCIA -->
+
+        <div class="sequence-row">
+
+          <label for="servo-sequence-wait">
+            Tiempo X entre movimientos (ms)
+          </label>
+
+          <input
+            id="servo-sequence-wait"
+            type="number"
+            min="0"
+            max="60000"
+            step="100"
+            value="1000"
+          >
+
+        </div>
+
+
+        <!-- ACCIONES AUTOMÁTICAS -->
+
+        <div class="servo-actions">
+
+          <button
+            id="servo-sequence-start"
+            class="btn primary"
+            disabled
+          >
+            Ejecutar secuencia automática
+          </button>
+
+
+          <button
+            id="servo-home-all"
+            class="btn"
+            disabled
+          >
+            Ambos servos a origen
+          </button>
+
+
+          <button
+            id="servo-sequence-cancel"
+            class="btn danger"
+            disabled
+          >
+            Cancelar secuencia
+          </button>
+
+        </div>
+
+
+        <p
+          id="servo-msg"
+          class="hint"
+          aria-live="polite"
+        >
+          Solicita el control para utilizar los servos.
+        </p>
+
+      </section>
+
     </section>
 
-    <!-- C: estado -->
-    <section id="tab-status" class="tabpane">
-      <div class="status-grid" id="status-grid"></div>
+
+    <!-- ========================================== -->
+    <!-- ESTADO -->
+    <!-- ========================================== -->
+
+    <section
+      id="tab-status"
+      class="tabpane"
+    >
+
+      <div
+        class="status-grid"
+        id="status-grid"
+      ></div>
+
     </section>
 
-    <!-- D: ajustes -->
-    <section id="tab-settings" class="tabpane">
-      <form id="settings-form" class="card form" autocomplete="off">
+
+    <!-- ========================================== -->
+    <!-- AJUSTES -->
+    <!-- ========================================== -->
+
+    <section
+      id="tab-settings"
+      class="tabpane"
+    >
+
+      <form
+        id="settings-form"
+        class="card form"
+        autocomplete="off"
+      >
+
         <h2>Rover</h2>
-        <label>Nombre del rover <input name="rover.name" maxlength="32"></label>
+
+        <label>
+
+          Nombre del rover
+
+          <input
+            name="rover.name"
+            maxlength="32"
+          >
+
+        </label>
+
 
         <h2>ESP32-S3 (UART)</h2>
-        <label>Puerto serie <input name="serial.port" list="port-list" placeholder="auto o /dev/ttyACM0"></label>
-        <datalist id="port-list"></datalist>
-        <label>Baudrate
-          <select name="serial.baudrate">
-            <option>9600</option><option>57600</option><option>115200</option><option>230400</option><option>460800</option><option>921600</option>
-          </select>
+
+        <label>
+
+          Puerto serie
+
+          <input
+            name="serial.port"
+            list="port-list"
+            placeholder="auto o /dev/ttyACM0"
+          >
+
         </label>
-        <label>Protocolo <select name="serial.protocol" id="protocol-select"></select></label>
-        <label>Velocidad máxima (%) <input name="motion.max_speed" type="number" min="20" max="100" step="5"></label>
+
+        <datalist id="port-list"></datalist>
+
+
+        <label>
+
+          Baudrate
+
+          <select name="serial.baudrate">
+
+            <option>9600</option>
+            <option>57600</option>
+            <option>115200</option>
+            <option>230400</option>
+            <option>460800</option>
+            <option>921600</option>
+
+          </select>
+
+        </label>
+
+
+        <label>
+
+          Protocolo
+
+          <select
+            name="serial.protocol"
+            id="protocol-select"
+          ></select>
+
+        </label>
+
+
+        <label>
+
+          Velocidad máxima (%)
+
+          <input
+            name="motion.max_speed"
+            type="number"
+            min="20"
+            max="100"
+            step="5"
+          >
+
+        </label>
+
 
         <h2>Cámara</h2>
-        <label>Dispositivo <select name="camera.device" id="camera-select"></select></label>
+
+
+        <label>
+
+          Dispositivo
+
+          <select
+            name="camera.device"
+            id="camera-select"
+          ></select>
+
+        </label>
+
+
         <div class="row2">
-          <label>Ancho <input name="camera.width" type="number" min="160" max="1920"></label>
-          <label>Alto <input name="camera.height" type="number" min="120" max="1080"></label>
-          <label>FPS <input name="camera.fps" type="number" min="1" max="60"></label>
+
+          <label>
+
+            Ancho
+
+            <input
+              name="camera.width"
+              type="number"
+              min="160"
+              max="1920"
+            >
+
+          </label>
+
+
+          <label>
+
+            Alto
+
+            <input
+              name="camera.height"
+              type="number"
+              min="120"
+              max="1080"
+            >
+
+          </label>
+
+
+          <label>
+
+            FPS
+
+            <input
+              name="camera.fps"
+              type="number"
+              min="1"
+              max="60"
+            >
+
+          </label>
+
         </div>
 
-        <h2>Wi-Fi <small>(Fase 4)</small></h2>
-        <label>SSID del hotspot <input name="wifi.ap_ssid" disabled></label>
-        <p class="hint">Las contraseñas Wi-Fi nunca se guardan en este fichero de ajustes.</p>
+
+        <h2>
+          Wi-Fi <small>(Fase 4)</small>
+        </h2>
+
+
+        <label>
+
+          SSID del hotspot
+
+          <input
+            name="wifi.ap_ssid"
+            disabled
+          >
+
+        </label>
+
+
+        <p class="hint">
+          Las contraseñas Wi-Fi nunca se guardan
+          en este fichero de ajustes.
+        </p>
+
 
         <div class="btn-row">
-          <button class="btn primary" type="submit">Guardar</button>
+
+          <button
+            class="btn primary"
+            type="submit"
+          >
+            Guardar
+          </button>
+
         </div>
-        <p id="settings-msg" class="hint" aria-live="polite"></p>
+
+
+        <p
+          id="settings-msg"
+          class="hint"
+          aria-live="polite"
+        ></p>
+
       </form>
+
     </section>
+
   </main>
 
+
+  <!-- ============================================ -->
+  <!-- JAVASCRIPT -->
+  <!-- ============================================ -->
+
   <script src="joystick.js"></script>
+
+  <script src="gamepad.js"></script>
+
   <script src="app.js"></script>
+
 </body>
+
 </html>
