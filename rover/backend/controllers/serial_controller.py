@@ -127,6 +127,9 @@ class Transport(ABC):
     @abstractmethod
     def is_open(self) -> bool: ...
 
+# ======================================================
+# TRANSPORTE SIMULADO
+# ======================================================
 
 class SimulatedTransport(Transport):
     """ESP32-S3 virtual: guarda las tramas recibidas y la última orden decodificada."""
@@ -159,6 +162,88 @@ class SimulatedTransport(Transport):
         self.frames.append(data)
         self.last = self.protocol.decode(data)
 
+        # ----------------------------------
+        # SERVO INDIVIDUAL
+        # ----------------------------------
+
+        if command.startswith("SERVO,"):
+
+            _, servo_text, angle_text = command.split(",")
+
+            servo = int(servo_text)
+            angle = int(angle_text)
+
+            self.servo_angles[servo] = angle
+            self.servo_sequence_active = False
+
+        # ----------------------------------
+        # SECUENCIA AUTOMÁTICA
+        # ----------------------------------
+
+        elif command.startswith("SERVO_SEQ,"):
+
+            self.sequence_wait_ms = int(
+                command.split(",", 1)[1]
+            )
+
+            self.servo_angles[2] = 90
+            self.servo_sequence_active = True
+
+        # ----------------------------------
+        # HOME GENERAL
+        # ----------------------------------
+
+        elif command == "SERVO_HOME":
+
+            self.servo_angles = {
+                1: 0,
+                2: 0
+            }
+
+            self.servo_sequence_active = False
+
+        # ----------------------------------
+        # HOME INDIVIDUAL
+        # ----------------------------------
+
+        elif command.startswith("SERVO_HOME,"):
+
+            servo = int(
+                command.split(",", 1)[1]
+            )
+
+            if servo not in (1, 2):
+                raise OSError("servo home inválido")
+
+            self.servo_angles[servo] = 0
+            self.servo_sequence_active = False
+
+        # ----------------------------------
+        # CANCELAR SECUENCIA
+        # ----------------------------------
+
+        elif command == "SERVO_CANCEL":
+
+            self.servo_sequence_active = False
+
+        # ----------------------------------
+        # STOP
+        # ----------------------------------
+
+        elif command == "STOP":
+
+            self.last = (0, 0)
+            self.servo_sequence_active = False
+
+        else:
+
+            raise OSError(
+                f"orden serie simulada desconocida: {command!r}"
+            )
+
+# ======================================================
+# DETECCIÓN DE PUERTOS
+# ======================================================
 
 # Enlace estable que crea la regla udev de scripts/install.sh para el ESP32 de XERA.
 PREFERRED_PORT = "/dev/xera-esp32"
@@ -281,6 +366,25 @@ class SerialController:
         if self.transport is None and self._factory is None:
             self.transport = SimulatedTransport(self.protocol)
 
+    # ----------------------------------
+    # ESTADO DE SECUENCIA
+    # ----------------------------------
+
+    @property
+    def servo_sequence_active(self) -> bool:
+
+        if (
+            self._servo_sequence_active
+            and self._clock() >= self._servo_sequence_deadline
+        ):
+
+            self._servo_sequence_active = False
+
+        return self._servo_sequence_active
+   
+    # ----------------------------------
+    # CONEXIÓN
+    # ----------------------------------
     # -- conexión -----------------------------------------------------------
     @property
     def connected(self) -> bool:
@@ -352,6 +456,46 @@ class SerialController:
     def set_protocol(self, name: str) -> None:
         self.reconfigure(self.port, self.baudrate, name)
 
+   # ----------------------------------
+    # ESCRITURA COMÚN
+    # ----------------------------------
+
+    def _write_frame(self, frame: bytes) -> bool:
+
+        with self._lock:
+
+            if not self.connected:
+
+                self.last_error = (
+                    self.last_error
+                    or "puerto serie desconectado"
+                )
+
+                return False
+
+            try:
+
+                self.transport.write(frame)
+
+            except OSError as exc:
+
+                self.last_error = str(exc)
+
+                log.error(
+                    "error de escritura serie: %s",
+                    exc
+                )
+
+                return False
+
+            self.frames_sent += 1
+            self.last_error = None
+
+            return True
+
+    # ----------------------------------
+    # MOVIMIENTO
+    # ----------------------------------
     # -- envío --------------------------------------------------------------
     def send(self, x: object, y: object) -> bool:
         """Valida, codifica y escribe. Devuelve True si la trama salió."""
@@ -370,10 +514,173 @@ class SerialController:
             self.last_sent = (xi, yi)
             self.frames_sent += 1
             return True
+           
+    # ----------------------------------
+    # VALIDACIÓN DE ENTEROS
+    # ----------------------------------
 
+    @staticmethod
+    def _strict_int(
+        value: object,
+        name: str
+    ) -> int:
+
+        if (
+            isinstance(value, bool)
+            or not isinstance(value, int)
+        ):
+
+            raise ValueError(
+                f"{name} debe ser un entero"
+            )
+
+        return value
+
+    # ----------------------------------
+    # SERVO INDIVIDUAL
+    # ----------------------------------
+
+    def set_servo(
+        self,
+        servo: object,
+        angle: object
+    ) -> bool:
+
+        servo_id = self._strict_int(
+            servo,
+            "servo"
+        )
+
+        target = self._strict_int(
+            angle,
+            "angle"
+        )
+
+        limits = {
+            1: 120,
+            2: 90
+        }
+
+        if servo_id not in limits:
+            raise ValueError("servo debe ser 1 o 2")
+
+        if not 0 <= target <= limits[servo_id]:
+
+            raise ValueError(
+                f"angle fuera de rango para servo "
+                f"{servo_id} (0..{limits[servo_id]})"
+            )
+
+        ok = self._write_frame(
+            f"SERVO,{servo_id},{target}\n".encode("ascii")
+        )
+
+        if ok:
+            self._servo_sequence_active = False
+
+        return ok
+
+    # ----------------------------------
+    # SECUENCIA AUTOMÁTICA
+    # ----------------------------------
+
+    def start_servo_sequence(
+        self,
+        wait_ms: object = 1000
+    ) -> bool:
+
+        wait = self._strict_int(
+            wait_ms,
+            "wait_ms"
+        )
+
+        if not 0 <= wait <= 60000:
+
+            raise ValueError(
+                "wait_ms debe estar entre 0 y 60000"
+            )
+
+        ok = self._write_frame(
+            f"SERVO_SEQ,{wait}\n".encode("ascii")
+        )
+
+        if ok:
+
+            self._servo_sequence_active = True
+
+            self._servo_sequence_deadline = (
+                self._clock()
+                + (2 * wait / 1000)
+                + 0.25
+            )
+
+        return ok
+
+    # ----------------------------------
+    # HOME INDIVIDUAL
+    # ----------------------------------
+
+    def home_servo(
+        self,
+        servo: object
+    ) -> bool:
+
+        servo_id = self._strict_int(
+            servo,
+            "servo"
+        )
+
+        if servo_id not in (1, 2):
+            raise ValueError("servo debe ser 1 o 2")
+
+        ok = self._write_frame(
+            f"SERVO_HOME,{servo_id}\n".encode("ascii")
+        )
+
+        if ok:
+            self._servo_sequence_active = False
+
+        return ok
+
+    # ----------------------------------
+    # HOME GENERAL
+    # ----------------------------------
+
+    def home_servos(self) -> bool:
+
+        ok = self._write_frame(
+            b"SERVO_HOME\n"
+        )
+
+        if ok:
+            self._servo_sequence_active = False
+
+        return ok
+
+    # ----------------------------------
+    # CANCELAR SECUENCIA
+    # ----------------------------------
+
+    def cancel_servo_sequence(self) -> bool:
+
+        ok = self._write_frame(
+            b"SERVO_CANCEL\n"
+        )
+
+        if ok:
+            self._servo_sequence_active = False
+
+        return ok
+   
+    # ----------------------------------
+    # PARAR MOTORES
+    # ----------------------------------
     def stop(self) -> bool:
         return self.send(0, 0)
 
+    # ----------------------------------
+    # LEER RESPUESTAS DEL ESP32
+    # ----------------------------------
     def poll_rx(self) -> None:
         """Recoge texto que haya enviado el ESP32 (se muestra en Estado)."""
         with self._lock:
@@ -383,7 +690,10 @@ class SerialController:
         lines = data.decode("utf-8", "replace").strip().splitlines()
         if lines:
             self.last_rx = lines[-1][:120]
-
+           
+    # ----------------------------------
+    # INFORMACIÓN DE ESTADO
+    # ----------------------------------
     # -- estado -------------------------------------------------------------
     def status(self) -> dict:
         t = self.transport
