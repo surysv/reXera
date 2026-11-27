@@ -32,7 +32,9 @@ from ..controllers.serial_controller import PROTOCOLS, list_serial_ports
 log = logging.getLogger(__name__)
 router = APIRouter()
 
-
+# ======================================================
+# HUB DE CLIENTES WEBSOCKET
+# ======================================================
 class Hub:
     """Conexiones WebSocket abiertas y difusión del estado."""
 
@@ -56,7 +58,9 @@ class Hub:
         self._tasks.add(task)
         task.add_done_callback(self._tasks.discard)
 
-
+# ======================================================
+# WEBSOCKET DE CONTROL
+# ======================================================
 @router.websocket("/ws/control")
 async def ws_control(ws: WebSocket) -> None:
     await ws.accept()
@@ -76,15 +80,158 @@ async def ws_control(ws: WebSocket) -> None:
                 await ws.send_json({"type": "error", "detail": "mensaje JSON inválido"})
                 continue
 
+            # ------------------------------------------
+            # MOVIMIENTO
+            # ------------------------------------------
             if kind == "move":
                 motion.move(cid, msg.get("x"), msg.get("y"))
+              
+            # ------------------------------------------
+            # STOP
+            # ------------------------------------------
             elif kind == "stop":
                 motion.stop(cid)
+
+            # ------------------------------------------
+            # PEDIR CONTROL
+            # ------------------------------------------
             elif kind == "request_control":
                 if not motion.request_control(cid):
                     await ws.send_json({"type": "denied", "reason": "occupied"})
+
+            # ------------------------------------------
+            # LIBERAR CONTROL
+            # ------------------------------------------
             elif kind == "release_control":
                 motion.release_control(cid)
+
+          
+            # ------------------------------------------
+            # CONTROL DE SERVOS
+            # ------------------------------------------
+
+            elif kind in {
+                "servo_set",
+                "servo_sequence",
+                "servo_home",
+                "servo_home_one",
+                "servo_cancel"
+            }:
+
+                # Requiere propietario del control.
+                if cid != motion.owner:
+
+                    await ws.send_json({
+                        "type": "denied",
+                        "reason": "control_required"
+                    })
+
+                    continue
+
+                try:
+
+                    # SERVO INDIVIDUAL
+                    if kind == "servo_set":
+
+                        servo = msg.get("servo")
+                        angle = msg.get("angle")
+
+                        sent = st.serial.set_servo(
+                            servo,
+                            angle
+                        )
+
+                        detail = {
+                            "servo": servo,
+                            "angle": angle
+                        }
+
+
+                    # SECUENCIA AUTOMÁTICA
+                    elif kind == "servo_sequence":
+
+                        wait_ms = msg.get(
+                            "wait_ms",
+                            1000
+                        )
+
+                        sent = st.serial.start_servo_sequence(
+                            wait_ms
+                        )
+
+                        detail = {
+                            "wait_ms": wait_ms
+                        }
+
+
+                    # HOME GENERAL
+                    elif kind == "servo_home":
+
+                        sent = st.serial.home_servos()
+
+                        detail = {}
+
+
+                    # HOME INDIVIDUAL
+                    elif kind == "servo_home_one":
+
+                        servo = msg.get("servo")
+
+                        sent = st.serial.home_servo(
+                            servo
+                        )
+
+                        detail = {
+                            "servo": servo
+                        }
+
+
+                    # CANCELAR
+                    else:
+
+                        sent = st.serial.cancel_servo_sequence()
+
+                        detail = {}
+
+                except (
+                    TypeError,
+                    ValueError
+                ) as exc:
+
+                    await ws.send_json({
+                        "type": "error",
+                        "detail": str(exc)
+                    })
+
+                    continue
+
+
+                # ----------------------------------
+                # RESPUESTA
+                # ----------------------------------
+
+                if not sent:
+
+                    await ws.send_json({
+                        "type": "error",
+                        "detail": (
+                            st.serial.last_error
+                            or "no se pudo enviar la orden al ESP32"
+                        )
+                    })
+
+                else:
+
+                    await ws.send_json({
+                        "type": "servo_accepted",
+                        "command": kind,
+                        **detail
+                    })
+
+
+            # ------------------------------------------
+            # MENSAJE DESCONOCIDO
+            # ------------------------------------------
             else:
                 await ws.send_json({"type": "error", "detail": f"tipo desconocido: {kind!r}"})
     except WebSocketDisconnect:
@@ -93,7 +240,9 @@ async def ws_control(ws: WebSocket) -> None:
         hub.conns.pop(cid, None)
         motion.disconnect(cid)  # si era el dueño: (0,0)
 
-
+# ======================================================
+# ESTADO
+# ======================================================
 @router.get("/api/status")
 def status(request: Request) -> dict:
     st = request.app.state
@@ -108,12 +257,16 @@ def status(request: Request) -> dict:
         "protocols": sorted(PROTOCOLS),
     }
 
-
+# ======================================================
+# PUERTOS SERIE
+# ======================================================
 @router.get("/api/serial/ports")
 def serial_ports() -> list[dict]:
     return list_serial_ports()
 
-
+# ======================================================
+# CONFIGURACIÓN
+# ======================================================
 @router.get("/api/config")
 def get_config(request: Request) -> dict:
     return request.app.state.settings.model_dump()
