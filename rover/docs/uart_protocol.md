@@ -22,6 +22,47 @@ throttle,steering\n
 | girar sobre sí mismo a la derecha | `0,100` |
 | parar | `0,0` |
 
+## Servos
+
+Las órdenes de servos comparten el puerto serie con el movimiento. No cambian la codificación de las tramas de motores.
+
+| Orden | Significado |
+|---|---|
+| `SERVO,1,60` | Llevar servo 1 a 60° (rango 0–120°) |
+| `SERVO,2,45` | Llevar servo 2 a 45° (rango 0–90°) |
+| `SERVO_SEQ,1000` | Ejecutar secuencia automática con X = 1000 ms |
+| `SERVO_HOME` | Llevar ambos servos a las posiciones HOME del firmware |
+| `SERVO_HOME,1` | Llevar servo 1 a su posición HOME |
+| `SERVO_HOME,2` | Llevar servo 2 a su posición HOME |
+| `SERVO_CANCEL` | Cancelar la secuencia y mantener las posiciones actuales |
+| `STOP` | Parar motores y cancelar la secuencia |
+
+La secuencia `SERVO_SEQ,X` es ejecutada localmente por el ESP32:
+
+1. Servo 2 a su ángulo máximo.
+2. Esperar X milisegundos.
+3. Servo 1 a su ángulo máximo.
+4. Esperar X milisegundos.
+5. Servo 2 a HOME y servo 1 a HOME.
+
+Se implementa mediante una máquina de estados basada en `millis()`, sin `delay()`.
+
+## Respuestas del ESP32
+
+El firmware emite mensajes de diagnóstico y confirmación, entre ellos:
+
+- `RECEIVED -> Throttle: ... Steering: ...`
+- `SERVO_ACCEPTED,...`
+- `SERVO_SEQUENCE_STARTED,...`
+- `SERVO_SEQUENCE_STEP_2`
+- `SERVO_SEQUENCE_DONE`
+- `SERVO_SEQUENCE_CANCELLED`
+- `ERROR,...`
+- `WATCHDOG -> no command, stopped`
+
+El backend muestra la última línea recibida en el estado serie. La escritura en USB confirma que los bytes se enviaron al puerto, no que se haya verificado físicamente el movimiento del servo.
+
+
 > ⚠️ **El orden es throttle primero.** En la web y en el código del backend se usa (x, y) con
 > x = steering e y = throttle; el protocolo `csv` los intercambia al enviar. Valores fuera de
 > -100..100 son ignorados por el firmware.
