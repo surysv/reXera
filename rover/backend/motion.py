@@ -14,7 +14,9 @@ from .controllers.serial_controller import LIMIT, SerialController
 
 log = logging.getLogger(__name__)
 
-
+# ======================================================
+# SANITIZAR ENTRADAS
+# ======================================================
 def sanitize_xy(x: object, y: object) -> tuple[int, int]:
     """Entrada del joystick -> enteros en [-100, 100].
 
@@ -28,13 +30,17 @@ def sanitize_xy(x: object, y: object) -> tuple[int, int]:
         out.append(max(-LIMIT, min(LIMIT, int(round(v)))))
     return out[0], out[1]
 
-
+# ======================================================
+# LIMITAR VELOCIDAD
+# ======================================================
 def scale_speed(x: int, y: int, max_speed: int) -> tuple[int, int]:
     """Aplica el límite de velocidad (20-100 %) a ambos ejes."""
     f = max_speed / 100
     return int(round(x * f)), int(round(y * f))
 
-
+# ======================================================
+# MOTION MANAGER
+# ======================================================
 class MotionManager:
     def __init__(
         self,
@@ -58,6 +64,9 @@ class MotionManager:
         self._owner_seen = 0.0                   # última actividad del dueño
         self.on_change: Callable[[], None] | None = None
 
+    # ==================================================
+    # UTILIDADES
+    # ==================================================
     # -- utilidades ---------------------------------------------------------
     def _changed(self) -> None:
         if self.on_change:
@@ -71,10 +80,24 @@ class MotionManager:
             return
         self.output = (x, y)
 
+     def cancel_servo_sequence(self) -> None:
+
+        cancel = getattr(
+            self.serial,
+            "cancel_servo_sequence",
+            None
+        )
+
+        if callable(cancel):
+            cancel()
+    
     def emergency_stop(self) -> None:
         """Envía (0,0) siempre, aunque la salida ya fuera (0,0)."""
         self._apply(0, 0)
 
+    # ==================================================
+    # CONEXIÓN DE CLIENTES
+    # ==================================================
     # -- clientes -----------------------------------------------------------
     def connect(self, cid: str) -> None:
         self.clients.add(cid)
@@ -87,6 +110,9 @@ class MotionManager:
             self.emergency_stop()  # el que conducía se fue: parar
         self._changed()
 
+    # ==================================================
+    # CONTROL EXCLUSIVO
+    # ==================================================
     # -- control exclusivo --------------------------------------------------
     def request_control(self, cid: str) -> bool:
         if cid not in self.clients:
@@ -107,6 +133,9 @@ class MotionManager:
         self._changed()
         return True
 
+    # ==================================================
+    # MOVIMIENTO
+    # ==================================================
     # -- órdenes ------------------------------------------------------------
     def move(self, cid: str, x: object, y: object) -> bool:
         """Solo el dueño puede mover. Una orden inválida se ignora (y no
@@ -126,16 +155,25 @@ class MotionManager:
             self._changed()
         return True
 
+    # ==================================================
+    # PARADA DE EMERGENCIA
+    # ==================================================
     def stop(self, cid: str | None = None) -> None:
         """STOP: lo puede pulsar cualquier cliente (parar nunca es peligroso)."""
         self.emergency_stop()
         self._last_cmd = self.clock()
         self._changed()
 
+    # ==================================================
+    # CONFIGURACIÓN
+    # ==================================================
     def set_max_speed(self, value: int) -> None:
         self.max_speed = value
         self._changed()
 
+    # ==================================================
+    # WATCHDOG
+    # ==================================================
     # -- watchdog -----------------------------------------------------------
     def check(self) -> None:
         """Llamar periódicamente (cada ~50 ms)."""
@@ -153,6 +191,9 @@ class MotionManager:
             self.emergency_stop()
             self._changed()
 
+    # ==================================================
+    # ESTADO
+    # ==================================================
     # -- estado -------------------------------------------------------------
     def snapshot(self, cid: str | None = None) -> dict:
         return {
